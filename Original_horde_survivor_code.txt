@@ -1,0 +1,1022 @@
+#include <cmath>
+#include <random>
+#include <vector>
+#include <string>
+#include "raylib.h"
+#include <sstream>
+
+
+const int screenWidth = 1520;
+const int screenHeight = 850;
+
+
+bool waveActive = false;
+int framesUntilEndOfWave = 3600;
+const int waveLength = 3600;
+
+
+std::vector<float> bulletsX;
+std::vector<float> bulletsY;
+std::vector<float> bulletsSize;
+std::vector<float> bulletsXVelocity;
+std::vector<float> bulletsYVelocity;
+
+
+std::vector<float> enemiesX;
+std::vector<float> enemiesY;
+std::vector<float> enemiesSize;
+std::vector<float> enemiesSpeed;
+std::vector<float> enemiesHealth;
+std::vector<float> enemiesFramesUntilAim;
+std::vector<float> enemiesXVelocity;
+std::vector<float> enemiesYVelocity;
+
+
+std::vector<float> coinsX;
+std::vector<float> coinsY;
+std::vector<float> coinsSize;
+std::vector<float> coinsValue;
+std::vector<float> coinsXVelocity;
+std::vector<float> coinsYVelocity;
+
+
+void removeEnemy(int index);
+void enemyPatchSpawn(float playerX, float playerY, float playerSize);
+bool touchingObject(float ax, float ay, float aSize, float bx, float by, float bSize);
+void shoot(float playerX, float playerY, float playerSize, int closestEnemyIndex);
+int getClosestEnemy(float playerX, float playerY);
+
+
+class Player {
+  public:
+   Player() {}
+   void playerTick() {
+       this->everyFrameActions();
+       this->playerMove();
+       this->takeDamage();
+   }
+   float getX() { return this->x; }
+  
+   float getY() { return this->y; }
+  
+   float getSize() { return this->size; }
+  
+   void setX(float amount) { this->x = amount; }
+  
+   void setY(float amount) { this->y = amount; }
+  
+   int getHealth() { return this->health; }
+  
+   int getHealthMax() { return this->healthMax; }
+  
+   void setHealth(int amount) { this->health = amount; }
+  
+   float getDamage() { return this->damage; }
+  
+   int getCoins() { return this->coins; }
+  
+   void addCoins(int amount) { this->coins += 1; }
+
+
+   void setAttackSpeed(int amount){
+       this->attackSpeed=amount;
+   }
+   void addWeapon(){
+       this->weaponsNumber+=1;
+   }
+   void doubleDamage(){
+       this->damage*=2.0f;
+   }
+   void setDamage(float amount){
+       this->damage= amount;
+   }
+   void halveDamage(){
+       this->damage/=2.0f;
+   }
+   void giveCoinKiller(){
+       this->hasCoinCollectKillEnemy=true;
+   }
+   bool hasCoinKiller(){
+       return this->hasCoinCollectKillEnemy;
+   }
+   void doubleAttackSpeed(){
+       this->attackSpeed/=2;
+   }
+   void halveAttackSpeed(){
+       this->attackSpeed*=2;
+   }
+   void setHealthMax(int amount){
+       this->healthMax=amount;
+   }
+   void setDrag(float amount){
+       this->drag=amount;
+   }
+   void halveAcceleration(){
+       this->acceleration/=2.0f;
+   }
+
+
+   int getLevel(){
+       return this->level;
+   }
+   int getXp(){
+       return this->xp;
+   }
+   int getXpRequired(){
+       return this->xpRequired;
+   }
+   void addXp(int amount){
+       this->xp+=amount;
+       while (this->xp >= this->xpRequired) {
+       this->xp -= this->xpRequired;
+      
+       this->level += 1;
+
+
+       this->xpRequired += this->xpRequiredBaseIncrease;
+       this->xpRequired *= 1.2f;
+   }
+   }
+
+
+   void starterStatsBeginning() {
+       this->healthMax=20;
+       this->health = this->healthMax;
+       this->x = this->startX;
+       this->y = this->startY;
+       this->coins = 0;
+       this->xVelocity = 0.0f;
+       this->yVelocity = 0.0f;
+       this->level = 0;
+       this->xp = 0;
+       this->xpRequired = 50;
+       this->xpRequiredBaseIncrease = 20;
+       this->drag=0.9f;
+       this->acceleration=1.2f;
+       this->hasCoinCollectKillEnemy = false;
+       this->size = 50.0f;
+       this->reload = 0;
+       this->attackSpeed = 30;
+       this->invulnerabilityFrames = 10;
+       this->invulnerabilityFramesCurrent = 60;
+       this->weaponsNumber = 1;
+       this->damage = 10.0f;
+       this->levelsLastWave = 0;
+   }
+   void starterStatsWave() {
+       this->health = this->healthMax;
+       this->x = this->startX;
+       this->y = this->startY;
+       this->xVelocity = 0.0f;
+       this->yVelocity = 0.0f;
+       this->reload = 0;
+       this->invulnerabilityFramesCurrent = 60;
+       this->levelsLastWave = 0;
+   }
+
+
+  private:
+   void everyFrameActions() {
+       this->reload -= 1;
+       if (this->reload <= 0) {
+           if (enemiesX.size() > 0) {
+               const int closestEnemyIndex =
+                   getClosestEnemy(this->x + this->size, this->y);
+               if (this->weaponsNumber == 1) {
+                   shoot(this->x, this->y, this->size, closestEnemyIndex);
+               } else if (this->weaponsNumber == 2) {
+                   shoot(this->x + this->size, this->y, this->size,
+                         closestEnemyIndex);
+                   shoot(this->x - this->size, this->y, this->size,
+                         closestEnemyIndex);
+               } else if (this->weaponsNumber == 3) {
+                   shoot(this->x + this->size, this->y + this->size,
+                         this->size, closestEnemyIndex);
+                   shoot(this->x - this->size, this->y + this->size,
+                         this->size, closestEnemyIndex);
+                   shoot(this->x, this->y - this->size, this->size,
+                         closestEnemyIndex);
+               } else if (this->weaponsNumber >= 4) {
+                   shoot(this->x + this->size, this->y, this->size,
+                         closestEnemyIndex);
+                   shoot(this->x - this->size, this->y, this->size,
+                         closestEnemyIndex);
+                   shoot(this->x, this->y + this->size, this->size,
+                         closestEnemyIndex);
+                   shoot(this->x, this->y - this->size, this->size,
+                         closestEnemyIndex);
+               }
+               this->reload = this->attackSpeed;
+           }
+       }
+       invulnerabilityFramesCurrent -= 1;
+       if (invulnerabilityFramesCurrent < 0) {
+           invulnerabilityFramesCurrent = 0;
+       }
+   }
+   void playerMove() {
+       bool left = IsKeyDown(KEY_LEFT);
+       bool right = IsKeyDown(KEY_RIGHT);
+       bool up = IsKeyDown(KEY_UP);
+       bool down = IsKeyDown(KEY_DOWN);
+
+
+       if (right && !up && !down) {
+           this->xVelocity += this->acceleration;
+       } else if (right) {
+           this->xVelocity += this->acceleration * 0.72;
+       }
+
+
+       if (left && !up && !down) {
+           this->xVelocity -= this->acceleration;
+       } else if (left) {
+           this->xVelocity -= this->acceleration * 0.72;
+       }
+
+
+       if (up && !right && !left) {
+           this->yVelocity -= this->acceleration;
+       } else if (up) {
+           this->yVelocity -= this->acceleration * 0.72;
+       }
+
+
+       if (down && !right && !left) {
+           this->yVelocity += this->acceleration;
+       } else if (down) {
+           this->yVelocity += this->acceleration * 0.72;
+       }
+
+
+       this->x += this->xVelocity;
+       this->y += this->yVelocity;
+       this->xVelocity *= this->drag;
+       this->yVelocity *= this->drag;
+
+
+       if (this->x < 0.0) {
+           this->x = 0.0;
+       }
+       if (this->y < 0.0) {
+           this->y = 0.0;
+       }
+       if (this->x > screenWidth - this->size) {
+           this->x = screenWidth - this->size;
+       }
+       if (this->y > screenHeight - this->size) {
+           this->y = screenHeight - this->size;
+       }
+   }
+   void takeDamage() {
+       if (invulnerabilityFramesCurrent == 0) {
+           for (int index = enemiesX.size() - 1; index >= 0; index -= 1) {
+               bool collided = touchingObject(this->x, this->y, this->size,
+                                              enemiesX[index], enemiesY[index],
+                                              enemiesSize[index]);
+               if (collided) {
+                   this->health -= 1;
+                   invulnerabilityFramesCurrent = invulnerabilityFrames;
+                   return;
+               }
+           }
+       }
+   }
+
+
+   const float startX = 750.0f;
+   const float startY = 400.0f;
+   bool hasCoinCollectKillEnemy = false;
+   float x;
+   float y;
+   float xVelocity = 0.0f;
+   float yVelocity = 0.0f;
+   float acceleration = 1.2f;
+   float drag = 0.9f;
+   float size = 50.0f;
+   int reload = 0;
+   int attackSpeed = 30;
+   int invulnerabilityFrames = 10;
+   int invulnerabilityFramesCurrent = 60;
+   int weaponsNumber = 1;
+   int health = 20;
+   int coins = 0;
+   float damage = 10.0f;
+   int healthMax = 20;
+   int levelsLastWave = 0;
+   int level = 0;
+   int xp = 0;
+   int xpRequired = 50;
+   int xpRequiredBaseIncrease = 20;
+};
+
+
+Player player;
+
+
+struct Item {
+   int price;
+   int column;
+   int row;
+   int identifier;
+   std::string description;
+};
+
+
+class Shop {
+public:
+   int chosenItemColumn = 1;
+   int chosenItemRow = 1;
+   int framesUntilShopCanChange = 0;
+   std::vector<Item> items;
+  
+   Shop(std::vector<Item> itemsStart){
+       this->items = itemsStart;
+   }
+   void shopBought(){
+       const int chosenItemIndex= -4 + chosenItemColumn-1 + chosenItemRow*4;
+       const int ability = this->items[chosenItemIndex].identifier;
+      
+       if (ability == 1){
+           player.doubleAttackSpeed();
+           player.doubleAttackSpeed();
+           player.addWeapon();
+           player.halveDamage();
+       }
+       if (ability == 2){
+           player.halveAcceleration();
+           player.setHealthMax(40);
+           player.doubleDamage();
+           player.addWeapon();
+           player.addWeapon();
+       }
+       if (ability == 3){
+           player.giveCoinKiller();
+           player.setHealthMax(1);
+           player.halveAttackSpeed();
+       }
+   }
+
+
+   void changeChosenItem() {
+       bool left = IsKeyDown(KEY_LEFT);
+       bool right = IsKeyDown(KEY_RIGHT);
+       bool up = IsKeyDown(KEY_UP);
+       bool down = IsKeyDown(KEY_DOWN);
+
+
+       if (left) {
+           this->chosenItemColumn -= 1;
+           if (chosenItemColumn < 1) {
+               chosenItemColumn = 1;
+           }
+           framesUntilShopCanChange = 10;
+       }
+       if (right) {
+           this->chosenItemColumn += 1;
+           if (chosenItemColumn > 4) {
+               chosenItemColumn = 4;
+           }
+           framesUntilShopCanChange = 10;
+       }
+       if (up) {
+           this->chosenItemRow -= 1;
+           if (chosenItemRow < 1) {
+               chosenItemRow = 1;
+           }
+           framesUntilShopCanChange = 10;
+       }
+       if (down) {
+           this->chosenItemRow += 1;
+           if (chosenItemRow > 2) {
+               chosenItemRow = 2;
+           }
+           framesUntilShopCanChange = 10;
+       }
+   }
+   void shopTick() {
+       framesUntilShopCanChange -= 1;
+       if (framesUntilShopCanChange < 0) {
+           framesUntilShopCanChange = 0;
+       }
+       if (framesUntilShopCanChange == 0) {
+           this->changeChosenItem();
+       }
+   }
+};
+
+
+Shop starterShop({
+   {0, 1, 1, 1, " 4x attack speed.\n 2x weapons.\n 0.5x damage."},
+   {0, 2, 1, 2, " 0.5x acceleration.\n 3x weapons.\n 40 health.\n 2x damage."},
+   {0, 3, 1, 3,  " Kill two enemies\n that spawned last\n when you pick up a\n coin.\n you die in one hit.\n 0.5x attack speed."},
+   {0, 4, 1, 4,  "nothing"},
+   {0, 1, 2, 5, "nothing"},
+   {0, 2, 2, 6,  "nothing"},
+   {0, 3, 2, 7, "nothing"},
+   {0, 4, 2, 8, "nothing"}
+});
+Shop levelUpShop({
+   {0, 1, 1, 9, "nothing"},
+   {0, 2, 1, 10, "nothing"},
+   {0, 3, 1, 11, "nothing"},
+   {0, 4, 1, 12, "nothing"},
+   {0, 1, 2, 13, "nothing"},
+   {0, 2, 2, 14, "nothing"},
+   {0, 3, 2, 15, "nothing"},
+   {0, 4, 2, 16, "nothing"}
+});
+
+
+inline std::mt19937& GetRandomEngine() {
+   static std::random_device rd;
+   static std::mt19937 gen(rd());
+   return gen;
+}
+
+
+int getRandomInt(int min, int max) {
+   std::uniform_int_distribution<int> dist(min, max);
+   return dist(GetRandomEngine());
+}
+
+
+float getRandomFloat(float min, float max) {
+   std::uniform_real_distribution<float> dist(min, max);
+   return dist(GetRandomEngine());
+}
+
+
+bool touchingObject(float ax, float ay, float aSize, float bx, float by,
+                   float bSize) {
+   if (ax < bx + bSize && bx < ax + aSize && ay < by + bSize &&
+       by < ay + aSize) {
+       return true;
+   } else {
+       return false;
+   }
+}
+
+
+void vectorsClear() {
+   bulletsX.clear();
+   bulletsY.clear();
+   bulletsSize.clear();
+   bulletsXVelocity.clear();
+   bulletsYVelocity.clear();
+
+
+   enemiesX.clear();
+   enemiesY.clear();
+   enemiesSize.clear();
+   enemiesSpeed.clear();
+   enemiesHealth.clear();
+   enemiesFramesUntilAim.clear();
+   enemiesXVelocity.clear();
+   enemiesYVelocity.clear();
+
+
+   coinsX.clear();
+   coinsY.clear();
+   coinsSize.clear();
+   coinsValue.clear();
+   coinsXVelocity.clear();
+   coinsYVelocity.clear();
+}
+
+
+void reserveVectorsTo(int limit) {
+   bulletsX.reserve(limit);
+   bulletsY.reserve(limit);
+   bulletsSize.reserve(limit);
+   bulletsXVelocity.reserve(limit);
+   bulletsYVelocity.reserve(limit);
+
+
+   enemiesX.reserve(limit);
+   enemiesY.reserve(limit);
+   enemiesSize.reserve(limit);
+   enemiesSpeed.reserve(limit);
+   enemiesHealth.reserve(limit);
+   enemiesFramesUntilAim.reserve(limit);
+   enemiesXVelocity.reserve(limit);
+   enemiesYVelocity.reserve(limit);
+
+
+   coinsX.reserve(limit);
+   coinsY.reserve(limit);
+   coinsSize.reserve(limit);
+   coinsValue.reserve(limit);
+   coinsXVelocity.reserve(limit);
+   coinsYVelocity.reserve(limit);
+}
+void removeBullet(int index) {
+   bulletsX[index] = bulletsX.back();
+   bulletsX.pop_back();
+   bulletsY[index] = bulletsY.back();
+   bulletsY.pop_back();
+   bulletsSize[index] = bulletsSize.back();
+   bulletsSize.pop_back();
+   bulletsXVelocity[index] = bulletsXVelocity.back();
+   bulletsXVelocity.pop_back();
+   bulletsYVelocity[index] = bulletsYVelocity.back();
+   bulletsYVelocity.pop_back();
+}
+
+
+void shoot(float playerX, float playerY, float playerSize,
+          int closestEnemyIndex) {
+   const float targetX = enemiesX[closestEnemyIndex];
+   const float targetY = enemiesY[closestEnemyIndex];
+   const float targetSize = enemiesSize[closestEnemyIndex];
+   const float bulletX = playerX;
+   const float bulletY = playerY;
+   const float middlePointPlayer = playerSize / 2.0f;
+   const float middlePointTarget = targetSize / 2.0f;
+   const float bulletSize = 10.0f;
+   const float bulletSpeed = 20.0f;
+   bulletsSize.push_back(bulletSize);
+   bulletsX.push_back(bulletX + middlePointPlayer - bulletSize / 2.0f);
+   bulletsY.push_back(bulletY + middlePointPlayer - bulletSize / 2.0f);
+   const float distanceX =
+       targetX + middlePointTarget - bulletX - middlePointPlayer;
+   const float distanceY =
+       targetY + middlePointTarget - bulletY - middlePointPlayer;
+   const float distanceTotal =
+       std::sqrt((distanceX * distanceX) + (distanceY * distanceY));
+   if (distanceTotal == 0.0f) {
+       bulletsXVelocity.push_back(0.0f);
+       bulletsYVelocity.push_back(0.0f);
+   } else {
+       bulletsXVelocity.push_back(distanceX / distanceTotal * bulletSpeed);
+       bulletsYVelocity.push_back(distanceY / distanceTotal * bulletSpeed);
+   }
+}
+void bulletsTick() {
+   for (int index = bulletsX.size() - 1; index >= 0; index -= 1) {
+       bulletsX[index] += bulletsXVelocity[index];
+       bulletsY[index] += bulletsYVelocity[index];
+
+
+       const float x = bulletsX[index];
+       const float y = bulletsY[index];
+       const float size = bulletsSize[index];
+
+
+       if (x > screenWidth - size + 100.0f ||
+           y > screenHeight - size + 100.0f || x < -100.0f || y < -100.0f) {
+           removeBullet(index);
+       }
+   }
+   for (int a = bulletsX.size() - 1; a >= 0 && a < bulletsX.size(); a -= 1) {
+       for (int b = enemiesX.size() - 1; b >= 0; b -= 1) {
+           if (touchingObject(bulletsX[a], bulletsY[a], bulletsSize[a],
+                              enemiesX[b], enemiesY[b], enemiesSize[b])) {
+               enemiesHealth[b] -= player.getDamage();
+               enemiesX[b] += bulletsXVelocity[a];
+               enemiesY[b] += bulletsYVelocity[a];
+               removeBullet(a);
+               break;
+           }
+       }
+   }
+}
+void removeCoin(int index) {
+   coinsX[index] = coinsX.back();
+   coinsX.pop_back();
+   coinsY[index] = coinsY.back();
+   coinsY.pop_back();
+   coinsSize[index] = coinsSize.back();
+   coinsSize.pop_back();
+   coinsValue[index] = coinsValue.back();
+   coinsValue.pop_back();
+   coinsXVelocity[index] = coinsXVelocity.back();
+   coinsXVelocity.pop_back();
+   coinsYVelocity[index] = coinsYVelocity.back();
+   coinsYVelocity.pop_back();
+}
+void coinSpawn(float x, float y) {
+   const float coinSize = 15.0f;
+   const int coinValue = 1;
+
+
+   coinsX.push_back(x);
+   coinsY.push_back(y);
+   coinsSize.push_back(coinSize);
+   coinsValue.push_back(coinValue);
+   coinsXVelocity.push_back(0.0f);
+   coinsYVelocity.push_back(0.0f);
+}
+void coinsTick(float playerX, float playerY, float playerSize) {
+   for (int index = coinsX.size() - 1; index >= 0; index -= 1) {
+       const float coinX = coinsX[index];
+       const float coinY = coinsY[index];
+       const float coinSize = coinsSize[index];
+
+
+       if (touchingObject(playerX, playerY, playerSize, coinX, coinY, coinSize)) {
+           player.addCoins(coinsValue[index]);
+           player.addXp(coinsValue[index]);
+           removeCoin(index);
+           if (player.hasCoinKiller()){
+               if (enemiesX.size()>0){
+                   removeEnemy(enemiesX.size()-1);
+               }
+               if (enemiesX.size()>0){
+                   removeEnemy(enemiesX.size()-1);
+               }
+           }
+           continue;
+       }
+       if (touchingObject(playerX - playerSize, playerY - playerSize,
+           playerSize * 3.0f, coinX, coinY, coinSize)) {
+           const float playerMiddleX = playerX + playerSize / 2.0f;
+           const float playerMiddleY = playerY + playerSize / 2.0f;
+           const float coinMiddleX = coinX + coinSize / 2.0f;
+           const float coinMiddleY = coinY + coinSize / 2.0f;
+
+
+           if (playerMiddleX > coinMiddleX) {
+               if (coinsXVelocity[index] < 0.0f) {
+                   coinsXVelocity[index] = 0.0f;
+               }
+               coinsXVelocity[index] += 1.0f;
+           }
+           if (playerMiddleX < coinMiddleX) {
+               if (coinsXVelocity[index] > 0.0f) {
+                   coinsXVelocity[index] = 0.0f;
+               }
+               coinsXVelocity[index] -= 1.0f;
+           }
+           if (playerMiddleY > coinMiddleY) {
+               if (coinsYVelocity[index] < 0.0f) {
+                   coinsYVelocity[index] = 0.0f;
+               }
+               coinsYVelocity[index] += 1.0f;
+           }
+           if (playerMiddleY < coinMiddleY) {
+               if (coinsYVelocity[index] > 0.0f) {
+                   coinsYVelocity[index] = 0.0f;
+               }
+               coinsYVelocity[index] -= 1.0f;
+           }
+           coinsX[index] += coinsXVelocity[index];
+           coinsY[index] += coinsYVelocity[index];
+       } else {
+           coinsXVelocity[index] = 0.0f;
+           coinsYVelocity[index] = 0.0f;
+       }
+   }
+}
+
+
+void removeEnemy(int index) {
+   if (getRandomInt(1, 10)<8){
+       coinSpawn(enemiesX[index], enemiesY[index]);
+   }
+   enemiesX[index] = enemiesX.back();
+   enemiesX.pop_back();
+   enemiesY[index] = enemiesY.back();
+   enemiesY.pop_back();
+   enemiesSize[index] = enemiesSize.back();
+   enemiesSize.pop_back();
+   enemiesSpeed[index] = enemiesSpeed.back();
+   enemiesSpeed.pop_back();
+   enemiesHealth[index] = enemiesHealth.back();
+   enemiesHealth.pop_back();
+   enemiesFramesUntilAim[index] = enemiesFramesUntilAim.back();
+   enemiesFramesUntilAim.pop_back();
+   enemiesXVelocity[index] = enemiesXVelocity.back();
+   enemiesXVelocity.pop_back();
+   enemiesYVelocity[index] = enemiesYVelocity.back();
+   enemiesYVelocity.pop_back();
+}
+
+
+void enemyAim(int index, float playerMiddleX, float playerMiddleY) {
+   const float enemySpeed = enemiesSpeed[index];
+   const float enemyMiddleX = enemiesX[index] + enemiesSize[index] / 2.0f;
+   const float enemyMiddleY = enemiesY[index] + enemiesSize[index] / 2.0f;
+
+
+   playerMiddleX += getRandomFloat(-10.0f, 10.0f);
+   playerMiddleY += getRandomFloat(-10.0f, 10.0f);
+
+
+   const float distanceX = playerMiddleX - enemyMiddleX;
+   const float distanceY = playerMiddleY - enemyMiddleY;
+   const float distanceTotal =
+       std::sqrt((distanceX * distanceX) + (distanceY * distanceY));
+   if (distanceTotal == 0.0f) {
+       return;
+   }
+   enemiesXVelocity[index] = distanceX / distanceTotal * enemySpeed;
+   enemiesYVelocity[index] = distanceY / distanceTotal * enemySpeed;
+}
+void enemySpawn(float playerX, float playerY, float playerSize, float x,
+               float y) {
+   const float enemySize = 15.0f + getRandomFloat(0.0f, 40.0f);
+   const float enemyHealth = enemySize / 5.0f + getRandomFloat(0.0f, 6.0f);
+   const float enemySpeed =
+       1.0f + getRandomFloat(0.5f, 2.0f) - enemySize / 55.0f;
+   const float enemyX = x;
+   const float enemyY = y;
+
+
+   enemiesFramesUntilAim.push_back(60);
+   enemiesHealth.push_back(enemyHealth);
+   enemiesSpeed.push_back(enemySpeed);
+   enemiesSize.push_back(enemySize);
+   enemiesX.push_back(enemyX);
+   enemiesY.push_back(enemyY);
+   const float distanceX = playerX - enemyX;
+   const float distanceY = playerY - enemyY;
+   const float distanceTotal =
+       std::sqrt((distanceX * distanceX) + (distanceY * distanceY));
+   if (distanceTotal == 0.0f) {
+       enemiesXVelocity.push_back(0.0f);
+       enemiesYVelocity.push_back(0.0f);
+   } else {
+       enemiesXVelocity.push_back(distanceX / distanceTotal * enemySpeed);
+       enemiesYVelocity.push_back(distanceY / distanceTotal * enemySpeed);
+   }
+}
+
+
+void enemiesTick(float playerX, float playerY, float playerSize) {
+   for (int index = enemiesX.size() - 1; index >= 0; index -= 1) {
+       enemiesX[index] += enemiesXVelocity[index];
+       enemiesY[index] += enemiesYVelocity[index];
+
+
+       float enemyX = enemiesX[index];
+       float enemyY = enemiesY[index];
+       float enemySize = enemiesSize[index];
+
+
+       if (enemyX > screenWidth - enemySize) {
+           enemiesX[index] = screenWidth - enemySize;
+       }
+       if (enemyX < 0.0f) {
+           enemiesX[index] = 0.0f;
+       }
+       if (enemyY > screenHeight - enemySize) {
+           enemiesY[index] = screenHeight - enemySize;
+       }
+       if (enemyY < 0.0f) {
+           enemiesY[index] = 0.0f;
+       }
+
+
+       enemiesFramesUntilAim[index] -= 1;
+       if (enemiesFramesUntilAim[index] <= 0) {
+           enemyAim(index, playerX + playerSize / 2.0f, playerY + playerSize / 2.0f);
+           enemiesFramesUntilAim[index] = getRandomInt(3, 60);
+       }
+
+
+       if (enemiesHealth[index] <= 0.0f) {
+           removeEnemy(index);
+       }
+   }
+}
+void enemyPatchSpawn(float playerX, float playerY, float playerSize) {
+   while (true) {
+       const float chosenX = getRandomFloat(20.0f, screenWidth - 20.0f);
+       const float chosenY = getRandomFloat(20.0f, screenHeight - 20.0f);
+       const float distanceX = playerX - chosenX;
+       const float distanceY = playerY - chosenY;
+       const float distanceTotal =
+           std::sqrt((distanceX * distanceX) + (distanceY * distanceY));
+       if (distanceTotal > 500) {
+           for (int i = 0; i < 15; i += 1) {
+               enemySpawn(playerX, playerY, playerSize,
+                          chosenX + getRandomFloat(-60.0f, 60.0f),
+                          chosenY + getRandomFloat(-60.0f, 60.0f));
+           }
+           return;
+       }
+   }
+}
+
+
+int getClosestEnemy(float playerX, float playerY) {
+   float closestEnemyDistance = INFINITY;
+   int closestEnemyIndex = 0;
+   for (int index = 0; index < enemiesX.size(); index += 1) {
+       const float distanceX = playerX - enemiesX[index];
+       const float distanceY = playerY - enemiesY[index];
+       const float distanceTotal =
+           (distanceX * distanceX) + (distanceY * distanceY);
+       if (distanceTotal < closestEnemyDistance) {
+           closestEnemyDistance = distanceTotal;
+           closestEnemyIndex = index;
+       }
+   }
+   return closestEnemyIndex;
+}
+
+
+void draw(float playerX, float playerY, float playerSize) {
+   BeginDrawing();
+
+
+   ClearBackground(BLUE);
+
+
+   for (int i = 0; i < coinsX.size(); i += 1) {
+       DrawRectangle(coinsX[i], coinsY[i], coinsSize[i], coinsSize[i], GREEN);
+   }
+   DrawRectangle(
+       playerX,
+       playerY,
+       playerSize,
+       playerSize,
+       RAYWHITE
+   );
+   DrawRectangle(
+       playerX - playerSize / 4.0f,
+       playerY - playerSize / 2.0f,
+       playerSize + playerSize / 2.0f,
+       playerSize / 3.0f, BLACK
+   );
+   DrawRectangle(
+       playerX - playerSize / 4.0f,
+       playerY - playerSize / 2.0f,
+       (playerSize + playerSize / 2.0f) * player.getHealth()/player.getHealthMax(),
+       playerSize / 3.0f,
+       GREEN
+   );
+   DrawRectangle(
+       0.0f,
+       0.0f,
+       (static_cast<float>(player.getXp())/static_cast<float>(player.getXpRequired()))*screenWidth,
+       20.0f,
+       YELLOW
+   );
+
+
+   for (int i = 0; i < bulletsX.size(); i += 1) {
+       DrawRectangle(bulletsX[i], bulletsY[i], bulletsSize[i], bulletsSize[i],
+                     BLACK);
+   }
+   for (int i = 0; i < enemiesX.size(); i += 1) {
+       DrawRectangle(enemiesX[i], enemiesY[i], enemiesSize[i], enemiesSize[i],
+                     RED);
+   }
+   DrawText(TextFormat("FPS: %i", GetFPS()), 10, 135, 20, BLACK);
+   DrawText(TextFormat("Enemies: %i", (int)enemiesX.size()), 10, 35, 20,
+            BLACK);
+   DrawText(TextFormat("Coins: %i", player.getCoins()), 10, 60, 20, BLACK);
+   DrawText(TextFormat("Health: %i", player.getHealth()), 10, 85, 20, BLACK);
+   DrawText(TextFormat("Level: %i", player.getLevel()), 10, 110, 20, BLACK);
+   DrawText(TextFormat("%i", (framesUntilEndOfWave + 54) / 60), 750, 10, 100,
+            BLACK);
+
+
+   EndDrawing();
+}
+
+
+void drawAfterWave(bool waveEndedSuccesfully) {
+   BeginDrawing();
+
+
+   ClearBackground(RAYWHITE);
+
+
+   if (!waveEndedSuccesfully) {
+       DrawText("Press Enter to Start", 100, 100, 120, BLACK);
+       DrawText("(use arrow keys to choose abilities)", 150, 250, 70, LIGHTGRAY);
+       for (int index = 0; index < 8; index += 1) {
+           float x;
+           float y;
+
+
+           switch (starterShop.items[index].column) {
+               case 1:
+                   x = 270.0f;
+                   break;
+               case 2:
+                   x = 540.0f;
+                   break;
+               case 3:
+                   x = 810.0f;
+                   break;
+               case 4:
+                   x = 1080.0f;
+                   break;
+               default:
+                   break;
+           }
+           switch (starterShop.items[index].row) {
+               case 1:
+                   y = 350.0f;
+                   break;
+               case 2:
+                   y = 600.0f;
+                   break;
+               default:
+                   break;
+           }
+
+
+           if (starterShop.chosenItemColumn == starterShop.items[index].column &&
+               starterShop.chosenItemRow == starterShop.items[index].row) {
+               DrawRectangle(x, y, 200.0f, 200.0f, GRAY);
+               DrawText(TextFormat("Price: %i", starterShop.items[index].price), x, y + 180.0f, 20, BLACK);
+               DrawText(TextFormat("%s", starterShop.items[index].description.c_str()), x, y, 20, BLACK);
+           } else {
+               DrawRectangle(x, y, 200.0f, 200.0f, BLACK);
+               DrawText(TextFormat("Price: %i", starterShop.items[index].price), x, y + 180.0f, 20, RAYWHITE);
+               DrawText(TextFormat("%s", starterShop.items[index].description.c_str()), x, y, 20, RAYWHITE);
+           }
+       }
+   }
+
+
+   if (waveEndedSuccesfully) {
+       DrawText("Wave Ended", 400, 200, 120, BLACK);
+       DrawText("Success", 600, 500, 80, GREEN);
+       DrawText("(press enter to try again)", 550, 650, 30, LIGHTGRAY);          
+   }
+   EndDrawing();
+  
+}
+
+
+int main() {
+   bool waveEndedSuccesfully = false;
+   int framesUntilSpawn = 120;
+   const int spawnCooldown = 200;
+
+
+   reserveVectorsTo(100000);
+
+
+   InitWindow(screenWidth, screenHeight, "My game");
+   SetTargetFPS(60);
+
+
+   while (!WindowShouldClose()) {
+       if (waveActive) {
+           player.playerTick();
+           bulletsTick();
+           framesUntilSpawn -= 1;
+           if (framesUntilSpawn < 0) {
+               framesUntilSpawn = 0;
+           }
+           if (framesUntilSpawn == 0) {
+               for (int i = 0; i < 3; i += 1) {
+                   enemyPatchSpawn(player.getX(), player.getY(),
+                                   player.getSize());
+               }
+               framesUntilSpawn = spawnCooldown;
+           }
+
+
+           enemiesTick(player.getX(), player.getY(), player.getSize());
+           coinsTick(player.getX(), player.getY(), player.getSize());
+
+
+           draw(player.getX(), player.getY(), player.getSize());
+           if (player.getHealth() <= 0) {
+               waveActive = false;
+               waveEndedSuccesfully = false;
+               player.starterStatsBeginning();
+               vectorsClear();
+           }
+           framesUntilEndOfWave -= 1;
+           if (framesUntilEndOfWave == 0) {
+               waveActive = false;
+               waveEndedSuccesfully = true;
+               vectorsClear();
+           }
+       }
+       if (!waveActive) {
+           starterShop.shopTick();
+           if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) { 
+               if (!waveEndedSuccesfully){
+                   player.starterStatsBeginning();
+                   starterShop.shopBought();
+               }
+               waveActive = true;
+               framesUntilSpawn = 120;
+               framesUntilEndOfWave = waveLength;
+               player.starterStatsWave();
+           }
+
+
+           drawAfterWave(waveEndedSuccesfully);
+       }
+   }
+
+
+   CloseWindow();
+
+
+   return 0;
+}
+
+
+
